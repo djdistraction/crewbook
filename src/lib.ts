@@ -1,5 +1,7 @@
 // CrewBook — data model, persistence, and helpers.
-// All data lives in localStorage; no server is involved.
+// All data lives in IndexedDB; no server is involved.
+
+import { get, set } from 'idb-keyval'
 
 export type PaymentMethod =
   | 'Venmo'
@@ -174,20 +176,33 @@ export function emptyDB(): DB {
   }
 }
 
-export function loadDB(): DB {
+// -----------------------------------------
+// NEW ASYNC DATABASE FUNCTIONS
+// -----------------------------------------
+
+export async function loadDB(): Promise<DB> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = await get<DB>(STORAGE_KEY)
     if (!raw) return emptyDB()
-    const parsed = JSON.parse(raw) as DB
-    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.people)) return emptyDB()
-    return { ...emptyDB(), ...parsed }
-  } catch {
+    
+    // Quick sanity check to ensure the object structure is generally correct
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.people)) {
+        return emptyDB()
+    }
+    
+    return { ...emptyDB(), ...raw }
+  } catch (err) {
+    console.error('Failed to load DB from IndexedDB:', err)
     return emptyDB()
   }
 }
 
-export function saveDB(db: DB) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+export async function saveDB(db: DB): Promise<void> {
+  try {
+    await set(STORAGE_KEY, db)
+  } catch (err) {
+    console.error('Failed to save DB to IndexedDB:', err)
+  }
 }
 
 export function uid(): string {
