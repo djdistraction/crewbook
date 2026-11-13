@@ -1,6 +1,6 @@
-// CrewBook app-level state: the DB (persisted to localStorage) plus routing.
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react'
-import { DB, loadDB, saveDB } from './lib'
+// CrewBook app-level state: the DB (persisted to IndexedDB) plus routing.
+import React, { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react'
+import { DB, loadDB, saveDB, emptyDB } from './lib'
 
 export type Tab =
   | 'board'
@@ -49,21 +49,37 @@ export function useApp(): AppCtx {
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [db, setDb] = useState<DB>(() => loadDB())
+  // 1. Initialize with an empty database to satisfy TypeScript on first render
+  const [db, setDb] = useState<DB>(emptyDB())
   const [route, setRoute] = useState<Route>({ tab: 'board' })
+  
+  // 2. Add a ready state to track when our background data fetch finishes
+  const [isReady, setIsReady] = useState(false)
+
+  // 3. Load the data asynchronously when the app opens
+  useEffect(() => {
+    async function init() {
+      const data = await loadDB()
+      setDb(data)
+      setIsReady(true)
+    }
+    init()
+  }, [])
 
   const update = useCallback((fn: (d: DB) => void) => {
     setDb((prev) => {
       const next: DB = JSON.parse(JSON.stringify(prev))
       fn(next)
-      saveDB(next)
+      // saveDB is now an async function, so this fires in the background
+      saveDB(next) 
       return next
     })
   }, [])
 
   const replace = useCallback((next: DB) => {
-    saveDB(next)
     setDb(next)
+    // Fires in the background
+    saveDB(next) 
   }, [])
 
   const go = useCallback((tab: Tab, detail?: Detail) => {
@@ -86,6 +102,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }),
     [db, update, replace, route, go],
   )
+
+  // 4. Pause the UI rendering until IndexedDB returns our data
+  if (!isReady) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: 'var(--dim)', fontSize: '1.2rem' }}>Loading CrewBook...</p>
+      </div>
+    )
+  }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
